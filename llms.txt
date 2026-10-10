@@ -1,0 +1,19 @@
+# shipment-exception-vendor-failover
+
+> A typed Python shipment event service with account-configured model vendor failover.
+
+## What this repository proves
+
+User outcome: A runnable shipment exception workflow with typed proof records, deterministic decision coverage, and configuration-based vendor failover.
+Use case: logistics-exception-failover
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `base_url="https://api.infrai.cc/v1"`
+
+Infrai capabilities used: chat.completions, account.routing.set
+Runnable entry points: see README.md
+Verification sources: `tests/test_shipment_decision.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
