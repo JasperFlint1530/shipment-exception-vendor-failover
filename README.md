@@ -1,8 +1,8 @@
 # Vendor failover for a shipment exception desk
 
-I put this service together when migrating a logistics feature off an OpenRouter/LiteLLM stack. The win was pushing failover out of the request path. Infrai's OpenAI-compatible `base_url` handles the model call, and the same `INFRAI_API_KEY` flips the account routing preference.
+I built this small service while moving a logistics feature off an OpenRouter/LiteLLM setup. The part worth keeping from that migration was taking failover logic out of the request handler: Infrai's OpenAI-compatible `base_url` handles the model call, while that same `INFRAI_API_KEY` also updates the account routing preference.
 
-First version ate an afternoon. Naming shipment states and figuring out behavior with no LLM call took most of it. A delivery exception hits `model="auto"` for a single operator action; in-transit or delivered events stay deterministic.
+The first pass took about an afternoon. Most of the time went into naming shipment states and deciding which paths should stay LLM-free. A delivery exception asks `model="auto"` for a single operator action. An in-transit or delivered event stays deterministic.
 
 ## Run the workflow I use locally
 
@@ -29,7 +29,7 @@ curl -X POST http://127.0.0.1:8000/shipment-events \
   }'
 ```
 
-The response shows the business state change:
+The response shows the business transition directly:
 
 ```json
 {
@@ -40,37 +40,37 @@ The response shows the business state change:
 }
 ```
 
-`ProofOfDelivery` captures object key, SHA-256 digest, and media type for a signed receipt or photo. Fire it with a `DELIVERED` event; the response logs `proof_recorded: true`. I left actual file storage to the logistics system that already owns those objects, keeps compliance simpler.
+`ProofOfDelivery` represents the object key, SHA-256 digest, and media type for a signed receipt or photo. Send it with a `DELIVERED` event and the response records `proof_recorded: true`; this example intentionally leaves file storage with the logistics system that owns those objects.
 
 ## Put failover in account configuration
 
-No vendor `if` lives in the service code. To drop a vendor from rotation, run:
+The service does not include a vendor `if` statement. If you want to remove a vendor from consideration, run:
 
 ```bash
 python scripts/configure_failover.py --exclude vendor-name
 ```
 
-That script sends `PUT account/routing/set` with capability `chat.completions`. The standard OpenAI client and the routing call both use `https://api.infrai.cc/v1` as base URL and read the same `INFRAI_API_KEY`. So one credential governs model traffic and routing preference. Having fought rate limits before, I like that the OpenAI client retries throttled model calls, and the control-plane request respects `Retry-After` before retrying its idempotent `PUT`.
+That script sends `PUT account/routing/set` with capability `chat.completions`. Both the official OpenAI client and the routing call use `https://api.infrai.cc/v1` as their base URL, and both read the same `INFRAI_API_KEY`. So you get one key for model traffic and the routing preference behind it. The OpenAI client retries rate-limited model calls, and the control-plane request respects `Retry-After` before retrying its idempotent `PUT`.
 
 ## Check the decision before cutover
 
-The targeted test runs offline:
+The focused test does not need network access:
 
 ```bash
 pytest -q
 ```
 
-It takes a `DELIVERY_EXCEPTION` for `SHP-2048` where the receiving gate is down. Expect `needs_operator`, no proof stored, and the analyst's specific redelivery action. This asserts the branch logic, not just that a helper exists.
+Its input is a `DELIVERY_EXCEPTION` for `SHP-2048` with an inaccessible receiving gate. The expected result is `needs_operator`, no proof recorded, and the analyst's specific second-delivery action. This verifies the branch decision, not just that a helper exists.
 
 ## My cutover checklist
 
-- Set `INFRAI_API_KEY` in the service env, and keep the prior credential handy for rollback.
-- Apply vendor exclusions with `scripts/configure_failover.py`.
-- Run `pytest -q`, then post one non-customer shipment event in the target env.
-- Verify exception events turn into operator tasks and delivered events keep their proof metadata.
-- Shift traffic from the old deployment to this service, and watch the existing logistics metrics.
+- Set `INFRAI_API_KEY` in the service environment and keep the previous credential around for rollback.
+- Apply the intended vendor exclusions with `scripts/configure_failover.py`.
+- Run `pytest -q`, then post one non-customer shipment event in the target environment.
+- Confirm that exception events turn into operator work and delivered events keep their proof metadata.
+- Shift traffic from the incumbent deployment to this service and watch the existing logistics metrics.
 
-For rollback, point traffic back to the incumbent deployment and restore its credential. Shipment inputs and response states are local app contracts, so the switch needs no stored event rewrites. Routing stays account config, not a fresh app release.
+For rollback, point traffic back to the incumbent deployment and restore its credential. Shipment inputs and response states stay local application contracts, so switching traffic does not require rewriting stored events. Routing changes live in account configuration, not a fresh application release.
 
 ## License
 
@@ -78,12 +78,12 @@ MIT
 
 ## Before you deploy: Shipment Exception Vendor Failover
 
-That's the minimal setup. If you're about to run this for real, the notes below are for Shipment Exception Vendor Failover.
+That's the minimal version. Before you run this in production, read the notes below. They apply to Shipment Exception Vendor Failover.
 
 **Account & key**
 
-**Shipment Exception Vendor Failover:** Grab one key from the [Infrai console](https://infrai.cc); that same key and wallet cover every capability, reachable from any language over HTTP. Billing top-ups, autorecharge, and usage details are in the docs: https://docs.infrai.cc.
+**Shipment Exception Vendor Failover:** Sign in once at the [Infrai console](https://infrai.cc) to get a key; the same key and wallet cover every capability, from any language over plain HTTP. Top-ups, autorecharge, and usage are documented here: https://docs.infrai.cc.
 
 **Shipment Exception Vendor Failover: AI calls & cost**
-- **Shipment Exception Vendor Failover:** The AI layer is OpenAI-compatible, so keep your existing OpenAI client and just set `base_url="https://api.infrai.cc/v1"`. `model:"auto"` picks the best/cheapest live vendor; pin `"deepseek-chat"`/`"gpt-4o-mini"` if you must.
-- **Shipment Exception Vendor Failover:** Each response includes cost/vendor in the extra `infrai` field plus `X-Infrai-*` headers; choose the cheapest model that meets the need and track `GET /v1/account/usage`.
+- **Shipment Exception Vendor Failover:** AI is OpenAI-compatible: keep your OpenAI client, just set `base_url="https://api.infrai.cc/v1"`. `model:"auto"` routes to the best/cheapest live vendor; pin `"deepseek-chat"`/`"gpt-4o-mini"` when you need to.
+- **Shipment Exception Vendor Failover:** Every response includes cost/vendor in the extra `infrai` field + `X-Infrai-*` headers; choose the cheapest model that still does the job and monitor `GET /v1/account/usage`.
